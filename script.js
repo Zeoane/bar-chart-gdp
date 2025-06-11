@@ -1,144 +1,66 @@
-let apiKey = 'e86b577642bfd672361e9cd14e542e3e'; 
-let url = `http://localhost:3000/api/gdp`;
+const csvUrl = 'https://raw.githubusercontent.com/holtzy/D3-graph-gallery/master/DATA/data_stacked.csv';
 
-let data; // Diese Variable wird von der fetch-Antwort befüllt
-let values = []; // Diese wird die gefilterten und geparsten Daten enthalten
+const svg = d3.select('#canvas');
+const width = 800;
+const height = 600;
+const margin = { top: 40, right: 30, bottom: 50, left: 60 };
 
-let heightScale;
-let xScale;
-let xAxisScale;
-let yAxisScale;
+svg.attr('width', width).attr('height', height);
 
-let width = 800;
-let height = 600;
-let padding = 40;
+const tooltip = d3.select('#tooltip');
 
-let svg = d3.select('svg');
+d3.csv(csvUrl, d3.autoType)
+  .then(data => {
+    console.log('Daten geladen:', data);
+    data = data.filter(d => d.Nitrogen != null && !isNaN(d.Nitrogen));
 
-let drawCanvas = () => {
-    svg.attr('width', width);
-    svg.attr('height', height);
-};
+    const x = d3.scaleBand()
+      .domain(data.map(d => d.group))
+      .range([margin.left, width - margin.right])
+      .padding(0.1);
 
-let generateScales = () => {
-    // Stellen Sie sicher, dass item.value als Zahl behandelt wird
-    heightScale = d3.scaleLinear()
-                    .domain([0, d3.max(values, (item) => {
-                        return item.value; // item.value ist jetzt schon eine Zahl dank forEach im fetch-Block
-                    })])
-                    .range([0, height - (2 * padding)]);
-
-    xScale = d3.scaleLinear()
-                    .domain([0, values.length - 1])
-                    .range([padding, width - padding]);
-
-    let datesArray = values.map((item) => {
-        return new Date(item.date);
-    });
-
-    xAxisScale = d3.scaleTime()
-                    .domain([d3.min(datesArray), d3.max(datesArray)])
-                    .range([padding, width - padding]);
-
-    yAxisScale = d3.scaleLinear()
-                    .domain([0, d3.max(values, (item) => {
-                        return item.value; // item.value ist jetzt schon eine Zahl
-                    })])
-                    .range([height - padding, padding]);
-};
-
-let drawBars = () => {
-    let tooltip = d3.select('body')
-                    .append('div')
-                    .attr('id', 'tooltip')
-                    .style('visibility', 'hidden')
-                    .style('width', 'auto')
-                    .style('height', 'auto');
-
-    svg.selectAll('rect')
-        .data(values)
-        .enter()
-        .append('rect')
-        .attr('class', 'bar')
-        .attr('width', (width - (2 * padding)) / values.length)
-        .attr('data-date', (item) => {
-            return item.date;
-        })
-        .attr('data-gdp', (item) => {
-            return item.value;
-        })
-        .attr('height', (item) => {
-            return heightScale(item.value); // item.value ist jetzt schon eine Zahl
-        })
-        .attr('x', (item, index) => {
-            return xScale(index);
-        })
-        .attr('y', (item) => {
-            return (height - padding) - heightScale(item.value); // item.value ist jetzt schon eine Zahl
-        })
-        .on('mouseover', (event, item) => { // Updated for d3.v5 event handling
-            tooltip.transition()
-                .style('visibility', 'visible');
-
-            tooltip.html(`Date: ${item.date}<br>GDP: $${item.value} Billions`); // Formatted for better readability
-
-            document.querySelector('#tooltip').setAttribute('data-date', item.date);
-        })
-        .on('mouseout', (event, item) => { // Updated for d3.v5 event handling
-            tooltip.transition()
-                .style('visibility', 'hidden');
-        });      
-};
-
-let generateAxes = () => {
-    let xAxis = d3.axisBottom(xAxisScale);
-    let yAxis = d3.axisLeft(yAxisScale);
+    const y = d3.scaleLinear()
+      .domain([0, d3.max(data, d => d.Nitrogen)])
+      .nice()
+      .range([height - margin.bottom, margin.top]);
 
     svg.append('g')
-        .call(xAxis)
-        .attr('id', 'x-axis')
-        .attr('transform', 'translate(0, ' + (height - padding) + ')');
+      .attr('transform', `translate(0,${height - margin.bottom})`)
+      .call(d3.axisBottom(x));
 
     svg.append('g')
-        .call(yAxis)
-        .attr('id', 'y-axis')
-        .attr('transform', 'translate(' + padding + ', 0)');      
-};
+      .attr('transform', `translate(${margin.left},0)`)
+      .call(d3.axisLeft(y));
 
-// --- Datenabruf mit fetch API ---
-fetch(url)
-    .then(response => {
-        if (!response.ok) {
-            throw new Error(`HTTP error! status: ${response.status}`);
-        }
-        return response.json();
-    })
-    .then(apiData => { // Umbenennung von 'data' zu 'apiData', um Verwechslung zu vermeiden
-        // FRED's JSON verwendet 'observations' als Schlüssel für die Daten
-        // Filtern Sie fehlende Werte ('.' bedeutet N/A bei FRED)
-        // Wandeln Sie den Wert explizit in eine Zahl um
-        values = apiData.observations
-            .filter(item => item.value !== '.')
-            .map(item => ({
-                date: item.date,
-                value: parseFloat(item.value)
-            }));
+    svg.selectAll('.bar')
+      .data(data)
+      .enter()
+      .append('rect')
+      .attr('class', 'bar')
+      .attr('x', d => x(d.group))
+      .attr('y', d => y(d.Nitrogen))
+      .attr('width', x.bandwidth())
+      .attr('height', d => y(0) - y(d.Nitrogen))
+      .on('mouseover', (event, d) => {
+        tooltip.style('visibility', 'visible')
+          .html(`Pflanze: ${d.group}<br>Nitrogen: ${d.Nitrogen}`)
+          .style('left', event.pageX + 10 + 'px')
+          .style('top', event.pageY - 28 + 'px');
+      })
+      .on('mouseout', () => tooltip.style('visibility', 'hidden'));
 
-        console.log(values); // Zur Überprüfung, ob die Daten richtig ankommen
-
-        drawCanvas();
-        generateScales();
-        drawBars();
-        generateAxes();
-    })
-    .catch(error => {
-        console.error('Es gab ein Problem beim Abrufen der Daten:', error);
-        // Zeigen Sie eine Fehlermeldung auf dem Chart an
-        d3.select("#canvas").append("text")
-            .attr("x", width / 2)
-            .attr("y", height / 2)
-            .attr("text-anchor", "middle")
-            .attr("fill", "#17252A")
-            .style("font-size", "16px")
-            .text("Fehler beim Laden der Daten. Bitte API-Key oder Verbindung prüfen.");
-    });
+    svg.append('text')
+      .attr('x', width / 2)
+      .attr('y', margin.top / 2)
+      .attr('text-anchor', 'middle')
+      .style('font-size', '24px')
+      .text('Beispiel Bar Chart – Nitrogen-Werte pro Pflanze');
+  })
+  .catch(err => {
+    console.error('Fehler beim Laden der CSV:', err);
+    svg.append('text')
+      .attr('x', width / 2)
+      .attr('y', height / 2)
+      .attr('text-anchor', 'middle')
+      .text('Fehler beim Laden der CSV-Daten');
+  });
